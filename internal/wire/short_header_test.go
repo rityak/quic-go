@@ -24,14 +24,18 @@ func TestParseShortHeader(t *testing.T) {
 	require.Equal(t, protocol.PacketNumberLen3, pnLen)
 }
 
-func TestParseShortHeaderNoQUICBit(t *testing.T) {
+// A cleared fixed bit is a greased QUIC packet (RFC 9287, miray T-038).
+func TestParseShortHeaderGreasedQUICBit(t *testing.T) {
 	data := []byte{
 		0b00000101,
 		0xde, 0xad, 0xbe, 0xef,
 		0x13, 0x37,
 	}
-	_, _, _, _, err := ParseShortHeader(data, 4)
-	require.EqualError(t, err, "not a QUIC packet")
+	l, pn, pnLen, _, err := ParseShortHeader(data, 4)
+	require.NoError(t, err)
+	require.Equal(t, 7, l)
+	require.Equal(t, protocol.PacketNumber(0x1337), pn)
+	require.Equal(t, protocol.PacketNumberLen2, pnLen)
 }
 
 func TestParseShortHeaderReservedBitsSet(t *testing.T) {

@@ -564,7 +564,9 @@ func (t *Transport) handlePacket(p receivedPacket) {
 	if len(p.data) == 0 {
 		return
 	}
-	if !wire.IsPotentialQUICPacket(p.data[0]) && !wire.IsLongHeaderPacket(p.data[0]) {
+	// A short header with the fixed bit cleared is a greased QUIC packet (RFC 9287,
+	// miray T-038) unless the application multiplexes non-QUIC traffic here.
+	if !wire.IsPotentialQUICPacket(p.data[0]) && !wire.IsLongHeaderPacket(p.data[0]) && t.readingNonQUICPackets.Load() {
 		t.handleNonQUICPacket(p)
 		return
 	}

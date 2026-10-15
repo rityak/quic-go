@@ -116,6 +116,8 @@ type ackFrameSource interface {
 }
 
 type packetPacker struct {
+	grease bool // the peer accepts a cleared fixed bit (RFC 9287): clear it at random
+
 	srcConnID     protocol.ConnectionID
 	getDestConnID func() protocol.ConnectionID
 
@@ -941,6 +943,9 @@ func (p *packetPacker) appendShortHeaderPacket(
 	raw, err := wire.AppendShortHeader(raw, connID, pn, pnLen, kp)
 	if err != nil {
 		return shortHeaderPacket{}, err
+	}
+	if p.grease && p.rand.IntN(2) == 0 {
+		raw[0] &^= 0x40 // not covered by header protection
 	}
 	payloadOffset := protocol.ByteCount(len(raw))
 

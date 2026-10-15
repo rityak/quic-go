@@ -18,9 +18,7 @@ func ParseShortHeader(data []byte, connIDLen int) (length int, _ protocol.Packet
 	if data[0]&0x80 > 0 {
 		return 0, 0, 0, 0, errors.New("not a short header packet")
 	}
-	if data[0]&0x40 == 0 {
-		return 0, 0, 0, 0, errors.New("not a QUIC packet")
-	}
+	// The fixed bit may be cleared by a peer greasing it (RFC 9287, miray T-038).
 	pnLen := protocol.PacketNumberLen(data[0]&0b11) + 1
 	if len(data) < 1+int(pnLen)+connIDLen {
 		return 0, 0, 0, 0, io.EOF
