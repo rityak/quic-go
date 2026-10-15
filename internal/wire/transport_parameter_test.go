@@ -1170,3 +1170,17 @@ func checkTransportParameterInvariants(t *testing.T, tp *TransportParameters, se
 		}
 	}
 }
+
+func TestTransportParameterGreaseQUICBit(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		p := &TransportParameters{GreaseQUICBit: on, MaxDatagramFrameSize: protocol.InvalidByteCount, ActiveConnectionIDLimit: 2}
+		var got TransportParameters
+		require.NoError(t, got.Unmarshal(p.Marshal(protocol.PerspectiveClient), protocol.PerspectiveClient))
+		require.Equal(t, on, got.GreaseQUICBit)
+	}
+	// the parameter must be empty
+	b := quicvarint.Append(nil, uint64(greaseQUICBitParameterID))
+	b = quicvarint.Append(b, 1)
+	b = append(b, 0)
+	require.ErrorContains(t, (&TransportParameters{}).Unmarshal(b, protocol.PerspectiveClient), "grease_quic_bit")
+}

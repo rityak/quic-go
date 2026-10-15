@@ -55,6 +55,8 @@ const (
 	legacyResetStreamAtParameterID transportParameterID = 0x17f7586d2cb571
 	// https://datatracker.ietf.org/doc/draft-ietf-quic-ack-frequency/11/
 	minAckDelayParameterID transportParameterID = 0xff04de1b
+	// RFC 9287
+	greaseQUICBitParameterID transportParameterID = 0x2ab2
 )
 
 // PreferredAddress is the value encoding in the preferred_address transport parameter
@@ -94,6 +96,7 @@ type TransportParameters struct {
 
 	MaxDatagramFrameSize protocol.ByteCount // RFC 9221
 	EnableResetStreamAt  bool               // https://datatracker.ietf.org/doc/draft-ietf-quic-reliable-stream-reset/09/
+	GreaseQUICBit        bool               // RFC 9287: the peer accepts packets with the fixed bit cleared
 	MinAckDelay          *time.Duration
 }
 
@@ -215,6 +218,11 @@ func (p *TransportParameters) unmarshal(b []byte, sentBy protocol.Perspective, f
 				return fmt.Errorf("wrong length for reset_stream_at: %d (expected empty)", paramLen)
 			}
 			p.EnableResetStreamAt = true
+		case greaseQUICBitParameterID:
+			if paramLen != 0 {
+				return fmt.Errorf("wrong length for grease_quic_bit: %d (expected empty)", paramLen)
+			}
+			p.GreaseQUICBit = true
 		default:
 			if fromSessionTicket {
 				// A ticket might contain a parameter for an extension supported by an older
@@ -458,6 +466,10 @@ func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 	// QUIC Stream Resets with Partial Delivery
 	if p.EnableResetStreamAt {
 		b = quicvarint.Append(b, uint64(resetStreamAtParameterID))
+		b = quicvarint.Append(b, 0)
+	}
+	if p.GreaseQUICBit {
+		b = quicvarint.Append(b, uint64(greaseQUICBitParameterID))
 		b = quicvarint.Append(b, 0)
 	}
 	if p.MinAckDelay != nil {
