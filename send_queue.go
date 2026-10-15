@@ -88,7 +88,11 @@ func (h *sendQueue) Run() error {
 			// make sure that all queued packets are actually sent out
 			shouldClose = true
 		case e := <-h.queue:
-			if err := h.conn.Write(e.buf.Data, e.gsoSize, e.ecn); err != nil {
+			err := h.conn.Write(e.buf.Data, e.gsoSize, e.ecn)
+			if err != nil && isTransientSendErr(err) {
+				err = retrySend(func() error { return h.conn.Write(e.buf.Data, e.gsoSize, e.ecn) }, err)
+			}
+			if err != nil {
 				// This additional check enables:
 				// 1. Checking for "datagram too large" message from the kernel, as such,
 				// 2. Path MTU discovery,and
