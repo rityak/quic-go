@@ -46,7 +46,7 @@ const DefaultMaxIncomingUniStreams = 100
 const MaxServerUnprocessedPackets = 1024
 
 // MaxConnUnprocessedPackets is the max number of packets stored in each connection that are not yet processed.
-const MaxConnUnprocessedPackets = 256
+const MaxConnUnprocessedPackets = 4096
 
 // SkipPacketInitialPeriod is the initial period length used for packet number skipping to prevent an Optimistic ACK attack.
 // Every time a packet number is skipped, the period is doubled, up to SkipPacketMaxPeriod.
