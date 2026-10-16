@@ -295,6 +295,7 @@ func (c *mockBatchConn) ReadBatch(ms []ipv4.Message, _ int) (int, error) {
 }
 
 func TestReadsMultipleMessagesInOneBatch(t *testing.T) {
+	t.Setenv("MIRAY_QUIC_GRO", "off") // the batch of single datagrams; GRO has its own test
 	bc := &mockBatchConn{t: t, numMsgRead: batchSize/2 + 1}
 
 	udpConn := newUDPConnLocalhost(t)

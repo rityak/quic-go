@@ -35,3 +35,12 @@ func parseIPv4PktInfo(body []byte) (ip netip.Addr, ifIndex uint32, ok bool) {
 func isGSOEnabled(syscall.RawConn) bool { return false }
 
 func isECNEnabled() bool { return !isECNDisabledUsingEnv() }
+
+// no UDP GRO here (miray T-083)
+const (
+	solUDP   = -1
+	udpGRO   = -1
+	groBatch = 1
+)
+
+func enableGRO(syscall.RawConn) bool { return false }

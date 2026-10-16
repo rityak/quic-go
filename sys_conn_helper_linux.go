@@ -153,3 +153,25 @@ func kernelVersion() (major, minor int) {
 
 	return values[0], values[1]
 }
+
+// UDP GRO on receive (miray T-083): runs of datagrams of one flow come up as one
+// message with the segment size in a UDP_GRO control message. MIRAY_QUIC_GRO=off
+// turns it off.
+const (
+	solUDP   = unix.SOL_UDP
+	udpGRO   = unix.UDP_GRO
+	groBatch = 2
+)
+
+func enableGRO(conn syscall.RawConn) bool {
+	if kernelVersionMajor < 5 || os.Getenv("MIRAY_QUIC_GRO") == "off" {
+		return false
+	}
+	var serr error
+	if err := conn.Control(func(fd uintptr) {
+		serr = unix.SetsockoptInt(int(fd), unix.SOL_UDP, unix.UDP_GRO, 1)
+	}); err != nil {
+		return false
+	}
+	return serr == nil
+}

@@ -72,6 +72,12 @@ type oobConn struct {
 	messages []ipv4.Message
 	buffers  [batchSize]*packetBuffer
 
+	// UDP GRO (Linux, miray T-083): the kernel hands over runs of datagrams of one
+	// flow in one message; they are cut into pending. nil pending when GRO is off.
+	gro     bool
+	pending []receivedPacket
+	next    int
+
 	cap connCapabilities
 }
 
@@ -153,12 +159,23 @@ func newConn(c OOBCapablePacketConn, supportsDF bool) (*oobConn, error) {
 	for i := 0; i < batchSize; i++ {
 		oobConn.messages[i].OOB = make([]byte, oobBufferSize)
 	}
+	if enableGRO(rawConn) {
+		// groBatch messages of 64 KiB: one coalesced message carries up to ~45 packets
+		oobConn.gro = true
+		oobConn.messages = oobConn.messages[:groBatch]
+		for i := range oobConn.messages {
+			oobConn.messages[i].Buffers[0] = make([]byte, 65535)
+		}
+	}
 	return oobConn, nil
 }
 
 var invalidCmsgOnceV4, invalidCmsgOnceV6 sync.Once
 
 func (c *oobConn) ReadPacket() (receivedPacket, error) {
+	if c.gro {
+		return c.readGRO()
+	}
 	if len(c.messages) == int(c.readPos) { // all messages read. Read the next batch of messages.
 		c.messages = c.messages[:batchSize]
 		// replace buffers data buffers up to the packet that has been consumed during the last ReadBatch call
@@ -181,23 +198,60 @@ func (c *oobConn) ReadPacket() (receivedPacket, error) {
 	buffer := c.buffers[c.readPos]
 	c.readPos++
 
-	data := msg.OOB[:msg.NN]
 	p := receivedPacket{
 		remoteAddr: msg.Addr,
 		rcvTime:    monotime.Now(),
 		data:       msg.Buffers[0][:msg.N],
 		buffer:     buffer,
 	}
+	if _, err := parseControlMessages(&p, msg.OOB[:msg.NN]); err != nil {
+		return receivedPacket{}, err
+	}
+	return p, nil
+}
+
+// readGRO reads a batch of possibly coalesced messages and returns the datagrams
+// one by one (miray T-083). Buffers are copied out: the 64 KiB ones are reused.
+func (c *oobConn) readGRO() (receivedPacket, error) {
+	for c.next >= len(c.pending) {
+		c.pending, c.next = c.pending[:0], 0
+		msgs := c.messages[:groBatch]
+		n, err := c.batchConn.ReadBatch(msgs, 0)
+		if n == 0 || err != nil {
+			return receivedPacket{}, err
+		}
+		now := monotime.Now()
+		for _, msg := range msgs[:n] {
+			if msg.Flags&unix.MSG_TRUNC != 0 {
+				continue // larger than 64 KiB: cannot be cut right
+			}
+			p := receivedPacket{remoteAddr: msg.Addr, rcvTime: now}
+			segment, err := parseControlMessages(&p, msg.OOB[:msg.NN])
+			if err != nil {
+				return receivedPacket{}, err
+			}
+			c.pending = splitCoalesced(c.pending, msg.Buffers[0][:msg.N], segment, p)
+		}
+	}
+	p := c.pending[c.next]
+	c.pending[c.next] = receivedPacket{}
+	c.next++
+	return p, nil
+}
+
+// parseControlMessages fills ECN and packet info of p from the ancillary data and
+// returns the GRO segment size, 0 when the message is a single datagram.
+func parseControlMessages(p *receivedPacket, data []byte) (segment int, err error) {
 	for len(data) > 0 {
 		hdr, body, remainder, err := unix.ParseOneSocketControlMessage(data)
 		if err != nil {
-			return receivedPacket{}, err
+			return 0, err
 		}
 		if hdr.Level == unix.IPPROTO_IP {
 			switch hdr.Type {
 			case msgTypeIPTOS:
 				if len(body) != 1 {
-					return receivedPacket{}, errors.New("invalid IPTOS size")
+					return 0, errors.New("invalid IPTOS size")
 				}
 				p.ecn = protocol.ParseECNHeaderBits(body[0] & ecnMask)
 			case ipv4PKTINFO:
@@ -217,7 +271,7 @@ func (c *oobConn) ReadPacket() (receivedPacket, error) {
 			switch hdr.Type {
 			case unix.IPV6_TCLASS:
 				if len(body) != 4 {
-					return receivedPacket{}, errors.New("invalid IPV6_TCLASS size")
+					return 0, errors.New("invalid IPV6_TCLASS size")
 				}
 				bits := uint8(nativeEndian.Uint32(body)) & ecnMask
 				p.ecn = protocol.ParseECNHeaderBits(bits)
@@ -237,9 +291,12 @@ func (c *oobConn) ReadPacket() (receivedPacket, error) {
 				}
 			}
 		}
+		if hdr.Level == solUDP && hdr.Type == udpGRO && len(body) >= 4 {
+			segment = int(nativeEndian.Uint32(body))
+		}
 		data = remainder
 	}
-	return p, nil
+	return segment, nil
 }
 
 // WritePacket writes a new packet.
