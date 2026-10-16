@@ -177,22 +177,24 @@ func (c *usoConn) sendSegmented(b []byte, addr net.Addr, gsoSize uint16) (int, e
 		return 0, errors.New("uso: not a UDP address")
 	}
 	ap := ua.AddrPort()
-	var sa4 windows.RawSockaddrInet4
-	var sa6 windows.RawSockaddrInet6
-	var name unsafe.Pointer
+	// the address is built inside a RawSockaddrAny: pointing Name at a smaller
+	// sockaddr straddles allocations (checkptr fails under -race, T-065)
+	var name syscall.RawSockaddrAny
 	var namelen int32
 	if c.v6 {
+		sa6 := (*windows.RawSockaddrInet6)(unsafe.Pointer(&name))
 		sa6.Family = windows.AF_INET6
 		port := (*[2]byte)(unsafe.Pointer(&sa6.Port))
 		port[0], port[1] = byte(ap.Port()>>8), byte(ap.Port())
 		sa6.Addr = ap.Addr().As16()
-		name, namelen = unsafe.Pointer(&sa6), int32(unsafe.Sizeof(sa6))
+		namelen = int32(unsafe.Sizeof(*sa6))
 	} else {
+		sa4 := (*windows.RawSockaddrInet4)(unsafe.Pointer(&name))
 		sa4.Family = windows.AF_INET
 		port := (*[2]byte)(unsafe.Pointer(&sa4.Port))
 		port[0], port[1] = byte(ap.Port()>>8), byte(ap.Port())
 		sa4.Addr = ap.Addr().Unmap().As4()
-		name, namelen = unsafe.Pointer(&sa4), int32(unsafe.Sizeof(sa4))
+		namelen = int32(unsafe.Sizeof(*sa4))
 	}
 
 	const word = unsafe.Sizeof(uintptr(0))
@@ -207,7 +209,7 @@ func (c *usoConn) sendSegmented(b []byte, addr net.Addr, gsoSize uint16) (int, e
 
 	buf := windows.WSABuf{Len: uint32(len(b)), Buf: &b[0]}
 	msg := windows.WSAMsg{
-		Name:        (*syscall.RawSockaddrAny)(name),
+		Name:        &name,
 		Namelen:     namelen,
 		Buffers:     &buf,
 		BufferCount: 1,
