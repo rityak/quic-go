@@ -2611,14 +2611,32 @@ func (c *Conn) sendPacketsWithoutGSO(now monotime.Time) error {
 	}
 }
 
+// minGSOSegmentSize is the smallest packet that starts a GSO run of equal-size
+// packets: a 20 KiB buffer then holds at most 40 segments, below the kernel's
+// UDP_MAX_SEGMENTS (64).
+const minGSOSegmentSize = 512
+
 func (c *Conn) sendPacketsWithGSO(now monotime.Time) error {
 	buf := getLargePacketBuffer()
 	maxSize := c.maxPacketSize()
 
 	ecn := c.sentPacketHandler.ECNMode(true)
+	// The kernel cuts a GSO buffer into segments of one size, only the last one may
+	// be shorter. The first packet sets the segment size and the next ones are
+	// packed to at most that size: DATAGRAM packets are rarely full-size, and a run
+	// of them still goes out in one send (T-040). A small first packet keeps the old
+	// rule (batch only full-size packets), so it never shrinks the ones after it.
+	segSize := maxSize
 	for {
 		var dontSendMore bool
-		size, err := c.appendOneShortHeaderPacket(buf, maxSize, ecn, now)
+		limit := maxSize
+		if buf.Len() > 0 {
+			limit = segSize
+		}
+		size, err := c.appendOneShortHeaderPacket(buf, limit, ecn, now)
+		if err == nil && buf.Len() == size && size >= minGSOSegmentSize {
+			segSize = size
+		}
 		if err != nil {
 			if err != errNothingToPack {
 				return err
@@ -2645,14 +2663,19 @@ func (c *Conn) sendPacketsWithGSO(now monotime.Time) error {
 
 		// Append another packet if
 		// 1. The congestion controller and pacer allow sending more
-		// 2. The last packet appended was a full-size packet
+		// 2. The last packet appended was of the segment size (a shorter one ends the batch)
 		// 3. The next packet will have the same ECN marking
 		// 4. We still have enough space for another full-size packet in the buffer
-		if !dontSendMore && size == maxSize && nextECN == ecn && buf.Len()+maxSize <= buf.Cap() {
+		if !dontSendMore && size == segSize && nextECN == ecn && buf.Len()+maxSize <= buf.Cap() {
 			continue
 		}
 
-		c.sendQueue.Send(buf, uint16(maxSize), ecn)
+		gsoSize := segSize
+		if buf.Len() <= segSize {
+			gsoSize = maxSize // a single packet: no segmentation either way
+		}
+		c.sendQueue.Send(buf, uint16(gsoSize), ecn)
+		segSize = maxSize
 
 		if dontSendMore {
 			return nil
