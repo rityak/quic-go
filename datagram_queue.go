@@ -20,7 +20,7 @@ type datagramQueue struct {
 	sent      chan struct{} // used to notify Add that a datagram was dequeued
 
 	rcvMx    sync.Mutex
-	rcvQueue [][]byte
+	rcvQueue ringbuffer.RingBuffer[[]byte]
 	rcvd     chan struct{} // used to notify Receive that a new datagram was received
 
 	closeErr error
@@ -90,13 +90,13 @@ func (h *datagramQueue) Pop() {
 }
 
 // HandleDatagramFrame handles a received DATAGRAM frame.
+// f.Data is the copy parseDatagramFrame made and nothing else keeps it, so it is
+// queued as is: a second copy per datagram bought nothing (miray T-079).
 func (h *datagramQueue) HandleDatagramFrame(f *wire.DatagramFrame) {
-	data := make([]byte, len(f.Data))
-	copy(data, f.Data)
 	var queued bool
 	h.rcvMx.Lock()
-	if len(h.rcvQueue) < maxDatagramRcvQueueLen {
-		h.rcvQueue = append(h.rcvQueue, data)
+	if h.rcvQueue.Len() < maxDatagramRcvQueueLen {
+		h.rcvQueue.PushBack(f.Data)
 		queued = true
 		select {
 		case h.rcvd <- struct{}{}:
@@ -113,9 +113,8 @@ func (h *datagramQueue) HandleDatagramFrame(f *wire.DatagramFrame) {
 func (h *datagramQueue) Receive(ctx context.Context) ([]byte, error) {
 	for {
 		h.rcvMx.Lock()
-		if len(h.rcvQueue) > 0 {
-			data := h.rcvQueue[0]
-			h.rcvQueue = h.rcvQueue[1:]
+		if !h.rcvQueue.Empty() {
+			data := h.rcvQueue.PopFront()
 			h.rcvMx.Unlock()
 			return data, nil
 		}
