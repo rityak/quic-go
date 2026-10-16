@@ -106,11 +106,11 @@ func TestCoalescedSegment(t *testing.T) {
 
 func TestSplitCoalesced(t *testing.T) {
 	data := append(batch(2, 1000), batch(1, 500)...)
-	ps := splitCoalesced(nil, data, 1000, nil, 0)
+	ps := splitCoalesced(nil, data, 1000, receivedPacket{})
 	require.Len(t, ps, 3)
 	require.Equal(t, data[:1000], ps[0].data)
 	require.Equal(t, data[1000:2000], ps[1].data)
 	require.Equal(t, data[2000:], ps[2].data)
-	require.Len(t, splitCoalesced(nil, data[:1000], 0, nil, 0), 1) // no coalescing info: one datagram
-	require.Len(t, splitCoalesced(nil, data, 0, nil, 0), 0)        // one oversized datagram is dropped
+	require.Len(t, splitCoalesced(nil, data[:1000], 0, receivedPacket{}), 1) // no coalescing info: one datagram
+	require.Len(t, splitCoalesced(nil, data, 0, receivedPacket{}), 0)        // one oversized datagram is dropped
 }

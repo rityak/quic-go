@@ -81,33 +81,12 @@ func (c *usoConn) ReadPacket() (receivedPacket, error) {
 		if err != nil {
 			return receivedPacket{}, err
 		}
-		c.pending = splitCoalesced(c.pending, c.scratch[:n], coalescedSegment(c.oob[:oobn]), addr, monotime.Now())
+		c.pending = splitCoalesced(c.pending, c.scratch[:n], coalescedSegment(c.oob[:oobn]), receivedPacket{remoteAddr: addr, rcvTime: monotime.Now()})
 	}
 	p := c.pending[c.next]
 	c.pending[c.next] = receivedPacket{}
 	c.next++
 	return p, nil
-}
-
-// splitCoalesced cuts a coalesced receive into datagrams of segment bytes (the
-// last may be shorter); segment 0 means one datagram. Oversized pieces are dropped.
-func splitCoalesced(out []receivedPacket, data []byte, segment int, addr net.Addr, now monotime.Time) []receivedPacket {
-	if segment <= 0 || segment > len(data) {
-		segment = len(data)
-	}
-	for len(data) > 0 {
-		size := segment
-		if size > len(data) {
-			size = len(data)
-		}
-		if size <= protocol.MaxPacketBufferSize {
-			buffer := getPacketBuffer()
-			buffer.Data = append(buffer.Data[:0], data[:size]...)
-			out = append(out, receivedPacket{remoteAddr: addr, rcvTime: now, data: buffer.Data, buffer: buffer})
-		}
-		data = data[size:]
-	}
-	return out
 }
 
 // coalescedSegment finds the UDP_COALESCED_INFO control message (a DWORD

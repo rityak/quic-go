@@ -120,3 +120,26 @@ func (c *basicConn) WritePacket(b []byte, addr net.Addr, _ []byte, gsoSize uint1
 }
 
 func (c *basicConn) capabilities() connCapabilities { return connCapabilities{DF: c.supportsDF} }
+
+// splitCoalesced cuts a coalesced receive (Windows URO, Linux GRO) into datagrams
+// of segment bytes, the last may be shorter; segment 0 means one datagram. Each
+// copies p (address, time, ECN, packet info). Oversized pieces are dropped (miray T-037, T-083).
+func splitCoalesced(out []receivedPacket, data []byte, segment int, p receivedPacket) []receivedPacket {
+	if segment <= 0 || segment > len(data) {
+		segment = len(data)
+	}
+	for len(data) > 0 {
+		size := segment
+		if size > len(data) {
+			size = len(data)
+		}
+		if size <= protocol.MaxPacketBufferSize {
+			buffer := getPacketBuffer()
+			buffer.Data = append(buffer.Data[:0], data[:size]...)
+			p.data, p.buffer = buffer.Data, buffer
+			out = append(out, p)
+		}
+		data = data[size:]
+	}
+	return out
+}
