@@ -669,6 +669,52 @@ func TestPackDatagramFrames(t *testing.T) {
 	require.NotEmpty(t, buffer.Data)
 }
 
+// Queued full-size DATAGRAM frames must not starve stream data: when both wait, packets alternate.
+func TestPackDatagramFramesDoNotStarveStreams(t *testing.T) {
+	const maxPacketSize = 1200
+	mockCtrl := gomock.NewController(t)
+	tp := newTestPacketPacker(t, mockCtrl, protocol.PerspectiveClient)
+	tp.ackFramer.EXPECT().GetAckFrame(protocol.Encryption1RTT, gomock.Any(), gomock.Any()).AnyTimes()
+	pn := protocol.PacketNumber(0x42)
+	tp.pnManager.EXPECT().PeekPacketNumber(protocol.Encryption1RTT).DoAndReturn(func(protocol.EncryptionLevel) (protocol.PacketNumber, protocol.PacketNumberLen) {
+		return pn, protocol.PacketNumberLen2
+	}).AnyTimes()
+	tp.pnManager.EXPECT().PopPacketNumber(protocol.Encryption1RTT).DoAndReturn(func(protocol.EncryptionLevel) protocol.PacketNumber {
+		pn++
+		return pn - 1
+	}).AnyTimes()
+	tp.sealingManager.EXPECT().Get1RTTSealer().Return(newMockShortHeaderSealer(mockCtrl), nil).AnyTimes()
+	tp.framer.EXPECT().HasData().Return(true).AnyTimes()
+	tp.framer.EXPECT().Append(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(cf []ackhandler.Frame, sf []ackhandler.StreamFrame, size protocol.ByteCount, _ monotime.Time, v protocol.Version) ([]ackhandler.Frame, []ackhandler.StreamFrame, protocol.ByteCount) {
+			if size < protocol.MinStreamFrameSize {
+				return cf, sf, 0
+			}
+			f, _ := (&wire.StreamFrame{StreamID: 4, Data: make([]byte, 2*maxPacketSize)}).MaybeSplitOffFrame(size, v)
+			return cf, append(sf, ackhandler.StreamFrame{Frame: f}), f.Length(v)
+		},
+	).AnyTimes()
+	for i := 0; i < 4; i++ {
+		tp.datagramQueue.Add(&wire.DatagramFrame{DataLenPresent: true, Data: make([]byte, maxPacketSize-50)})
+	}
+
+	var kinds []string
+	for i := 0; i < 6; i++ {
+		p, err := tp.packer.AppendPacket(getPacketBuffer(), maxPacketSize, monotime.Now(), protocol.Version1)
+		require.NoError(t, err)
+		switch {
+		case len(p.Frames) == 1 && len(p.StreamFrames) == 0:
+			require.IsType(t, &wire.DatagramFrame{}, p.Frames[0].Frame)
+			kinds = append(kinds, "dgram")
+		case len(p.Frames) == 0 && len(p.StreamFrames) == 1:
+			kinds = append(kinds, "stream")
+		default:
+			t.Fatalf("unexpected packet: %d frames, %d stream frames", len(p.Frames), len(p.StreamFrames))
+		}
+	}
+	require.Equal(t, []string{"dgram", "stream", "dgram", "stream", "dgram", "stream"}, kinds)
+}
+
 func TestPackLargeDatagramFrame(t *testing.T) {
 	// If a packet contains an ACK, and doesn't have enough space for the DATAGRAM frame,
 	// it should be skipped. It will be packed in the next packet.

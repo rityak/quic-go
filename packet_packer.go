@@ -139,6 +139,8 @@ type packetPacker struct {
 	numNonAckElicitingAcks int
 
 	peekTimes int
+	// the previous 1-RTT packet carried a DATAGRAM frame
+	datagramLast bool
 }
 
 const DatagramFrameMaxPeekTimes = 10
@@ -661,7 +663,11 @@ func (p *packetPacker) composeNextPacket(
 		}
 	}
 
-	if p.datagramQueue != nil {
+	// A full-size DATAGRAM frame leaves no room for stream data or retransmissions, so while
+	// datagrams queue up those would starve; when both are waiting, packets alternate.
+	datagramTurn := !p.datagramLast || !(hasData || hasRetransmission)
+	p.datagramLast = false
+	if p.datagramQueue != nil && datagramTurn {
 		if f := p.datagramQueue.Peek(); f != nil {
 			size := f.Length(v)
 			if size <= maxPayloadSize-pl.length { // DATAGRAM frame fits
@@ -669,6 +675,7 @@ func (p *packetPacker) composeNextPacket(
 				pl.length += size
 				p.datagramQueue.Pop()
 				p.peekTimes = 0
+				p.datagramLast = true
 			} else if pl.ack == nil {
 				// The DATAGRAM frame doesn't fit, and the packet doesn't contain an ACK.
 				// Discard this frame. There's no point in retrying this in the next packet,
