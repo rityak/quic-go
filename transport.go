@@ -547,6 +547,10 @@ func (t *Transport) listen(conn rawConn) {
 			if isRecvMsgSizeErr(err) {
 				continue
 			}
+			if isRecvICMPSoftErr(err) {
+				t.logger.Debugf("ICMP error reading from conn: %s", err)
+				continue
+			}
 			t.close(err)
 			return
 		}

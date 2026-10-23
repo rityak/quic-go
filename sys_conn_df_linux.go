@@ -40,3 +40,12 @@ func isSendMsgSizeErr(err error) bool {
 }
 
 func isRecvMsgSizeErr(error) bool { return false }
+
+// isRecvICMPSoftErr reports read errors that an ICMP message leaves on a socket
+// with IP_RECVERR (or a connected one) and that do not end the path: packet too
+// big (EMSGSIZE, DF is set) and transient unreachability. A connection refused
+// (the server's port is closed) still closes the transport.
+func isRecvICMPSoftErr(err error) bool {
+	return errors.Is(err, unix.EMSGSIZE) || errors.Is(err, unix.EHOSTUNREACH) ||
+		errors.Is(err, unix.ENETUNREACH) || errors.Is(err, unix.EHOSTDOWN)
+}
