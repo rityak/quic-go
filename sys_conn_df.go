@@ -20,3 +20,5 @@ func isRecvMsgSizeErr(err error) bool {
 	// to be implemented for more specific platforms
 	return false
 }
+
+func isRecvICMPSoftErr(error) bool { return false }

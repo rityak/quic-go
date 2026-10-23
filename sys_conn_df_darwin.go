@@ -88,3 +88,5 @@ func getMacOSVersion() (int, error) {
 	}
 	return version, nil
 }
+
+func isRecvICMPSoftErr(error) bool { return false }
