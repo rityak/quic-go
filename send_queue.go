@@ -3,6 +3,7 @@ package quic
 import (
 	"errors"
 	"net"
+	"syscall"
 
 	"github.com/metacubex/quic-go/internal/protocol"
 )
@@ -28,6 +29,7 @@ type sendQueue struct {
 	runStopped  chan struct{} // runStopped when the run loop returns
 	available   chan struct{}
 	conn        sendConn
+	refused     func() bool // Config.ConnectionRefused: true keeps the connection on a refused send
 }
 
 var _ sender = &sendQueue{}
@@ -91,6 +93,9 @@ func (h *sendQueue) Run() error {
 			err := h.conn.Write(e.buf.Data, e.gsoSize, e.ecn)
 			if err != nil && isTransientSendErr(err) {
 				err = retrySend(func() error { return h.conn.Write(e.buf.Data, e.gsoSize, e.ecn) }, err)
+			}
+			if err != nil && h.refused != nil && errors.Is(err, syscall.ECONNREFUSED) && h.refused() {
+				err = nil // the error of an ICMP, not of this packet; QUIC recovers the loss
 			}
 			if err != nil {
 				// This additional check enables:

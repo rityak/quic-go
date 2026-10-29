@@ -186,6 +186,13 @@ type Config struct {
 
 	MaxDatagramFrameSize int64
 
+	// ConnectionRefused, if set, is called when a read on the transport made for
+	// this one connection (Dial, DialEarly on a single-use Transport) fails with
+	// connection refused: an ICMP port unreachable on a socket with IP_RECVERR or
+	// a connected one. Returning true keeps the transport, as for a soft ICMP
+	// error: a client that hops server ports moves on instead of losing the
+	// connection to one closed port. Unset, or false, closes it as before.
+	ConnectionRefused func() bool
 	// DisablePathManager disables path manager.
 	// for hysteria2 port hopping, direct change remote address without connection migration logic
 	DisablePathManager bool

@@ -127,5 +127,6 @@ func populateConfig(config *Config) *Config {
 		Tracer:                           config.Tracer,
 		MaxDatagramFrameSize:             config.MaxDatagramFrameSize,
 		DisablePathManager:               config.DisablePathManager,
+		ConnectionRefused:                config.ConnectionRefused,
 	}
 }

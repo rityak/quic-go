@@ -9,6 +9,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/metacubex/quic-go/internal/protocol"
@@ -160,6 +161,8 @@ type Transport struct {
 	createdConn bool
 	isSingleUse bool // was created for a single server or client, i.e. by calling quic.Listen or quic.Dial
 
+	connRefused atomic.Pointer[func() bool] // Config.ConnectionRefused of a single-use transport's connection
+
 	readingNonQUICPackets atomic.Bool
 	nonQUICPackets        chan receivedPacket
 
@@ -249,6 +252,9 @@ func (t *Transport) dial(ctx context.Context, addr net.Addr, host string, tlsCon
 	}
 	if err := validateConfig(conf); err != nil {
 		return nil, err
+	}
+	if t.isSingleUse && conf != nil && conf.ConnectionRefused != nil {
+		t.connRefused.Store(&conf.ConnectionRefused)
 	}
 	conf = populateConfig(conf)
 	tlsConf = tlsConf.Clone()
@@ -549,6 +555,10 @@ func (t *Transport) listen(conn rawConn) {
 			}
 			if isRecvICMPSoftErr(err) {
 				t.logger.Debugf("ICMP error reading from conn: %s", err)
+				continue
+			}
+			if refused := t.connRefused.Load(); refused != nil && errors.Is(err, syscall.ECONNREFUSED) && (*refused)() {
+				t.logger.Debugf("Connection refused reading from conn, kept: %s", err)
 				continue
 			}
 			t.close(err)
