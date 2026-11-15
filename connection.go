@@ -3067,6 +3067,13 @@ func (c *Conn) onStreamCompleted(id protocol.StreamID) {
 // In addition, a datagram may be dropped before being sent out if the available packet size suddenly decreases.
 // If the payload is too large to be sent at the current time, a DatagramTooLargeError is returned.
 func (c *Conn) SendDatagram(p []byte) error {
+	return c.SendDatagramWithDeadline(context.Background(), p, time.Time{})
+}
+
+// SendDatagramWithDeadline bounds queue admission by ctx and expires queued data
+// at deadline. A zero deadline preserves the behavior of SendDatagram. The
+// deadline does not retract packets already handed to the socket send queue.
+func (c *Conn) SendDatagramWithDeadline(ctx context.Context, p []byte, deadline time.Time) error {
 	if !c.supportsDatagrams() {
 		return errors.New("datagram support disabled")
 	}
@@ -3083,7 +3090,7 @@ func (c *Conn) SendDatagram(p []byte) error {
 	}
 	f.Data = make([]byte, len(p))
 	copy(f.Data, p)
-	return c.datagramQueue.Add(f)
+	return c.datagramQueue.AddContext(ctx, f, deadline)
 }
 
 // ReceiveDatagram gets a message received in a QUIC datagram, as specified in RFC 9221.

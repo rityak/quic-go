@@ -3,6 +3,7 @@ package quic
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/metacubex/quic-go/internal/utils"
 	"github.com/metacubex/quic-go/internal/utils/ringbuffer"
@@ -14,9 +15,14 @@ const (
 	maxDatagramRcvQueueLen  = 128
 )
 
+type queuedDatagram struct {
+	frame   *wire.DatagramFrame
+	expires time.Time
+}
+
 type datagramQueue struct {
 	sendMx    sync.Mutex
-	sendQueue ringbuffer.RingBuffer[*wire.DatagramFrame]
+	sendQueue ringbuffer.RingBuffer[queuedDatagram]
 	sent      chan struct{} // used to notify Add that a datagram was dequeued
 
 	rcvMx    sync.Mutex
@@ -45,11 +51,29 @@ func newDatagramQueue(hasData func(), logger utils.Logger) *datagramQueue {
 // Up to 32 DATAGRAM frames will be queued.
 // Once that limit is reached, Add blocks until the queue size has reduced.
 func (h *datagramQueue) Add(f *wire.DatagramFrame) error {
+	return h.AddContext(context.Background(), f, time.Time{})
+}
+
+func (h *datagramQueue) AddContext(ctx context.Context, f *wire.DatagramFrame, expires time.Time) error {
+	if !expires.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, expires)
+		defer cancel()
+	}
 	h.sendMx.Lock()
 
 	for {
+		select {
+		case <-ctx.Done():
+			h.sendMx.Unlock()
+			return ctx.Err()
+		case <-h.closed:
+			h.sendMx.Unlock()
+			return h.closeErr
+		default:
+		}
 		if h.sendQueue.Len() < maxDatagramSendQueueLen {
-			h.sendQueue.PushBack(f)
+			h.sendQueue.PushBack(queuedDatagram{frame: f, expires: expires})
 			h.sendMx.Unlock()
 			h.hasData()
 			return nil
@@ -60,6 +84,8 @@ func (h *datagramQueue) Add(f *wire.DatagramFrame) error {
 		}
 		h.sendMx.Unlock()
 		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-h.closed:
 			return h.closeErr
 		case <-h.sent:
@@ -73,10 +99,18 @@ func (h *datagramQueue) Add(f *wire.DatagramFrame) error {
 func (h *datagramQueue) Peek() *wire.DatagramFrame {
 	h.sendMx.Lock()
 	defer h.sendMx.Unlock()
-	if h.sendQueue.Empty() {
-		return nil
+	for !h.sendQueue.Empty() {
+		item := h.sendQueue.PeekFront()
+		if item.expires.IsZero() || time.Now().Before(item.expires) {
+			return item.frame
+		}
+		_ = h.sendQueue.PopFront()
+		select {
+		case h.sent <- struct{}{}:
+		default:
+		}
 	}
-	return h.sendQueue.PeekFront()
+	return nil
 }
 
 func (h *datagramQueue) Pop() {
