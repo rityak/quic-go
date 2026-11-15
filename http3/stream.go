@@ -49,6 +49,18 @@ type Stream struct {
 	parsedTrailer bool
 }
 
+// SendDatagramWithDeadline bounds queue admission and expiration while retaining
+// the RFC 9297 quarter-stream-ID prefix. A zero deadline disables expiration.
+func (s *Stream) SendDatagramWithDeadline(ctx context.Context, b []byte, deadline time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := context.Cause(s.datagramStream.Context()); err != nil {
+		return err
+	}
+	return s.conn.sendDatagramWithDeadline(ctx, s.datagramStream.StreamID(), b, deadline)
+}
+
 func newStream(
 	str datagramStream,
 	conn *rawConn,
@@ -270,6 +282,11 @@ func (s *RequestStream) SetDeadline(t time.Time) error {
 // as the server might drop datagrams which it can't associate with an existing request.
 func (s *RequestStream) SendDatagram(b []byte) error {
 	return s.str.SendDatagram(b)
+}
+
+// SendDatagramWithDeadline forwards bounded HTTP Datagram admission and expiry.
+func (s *RequestStream) SendDatagramWithDeadline(ctx context.Context, b []byte, deadline time.Time) error {
+	return s.str.SendDatagramWithDeadline(ctx, b, deadline)
 }
 
 // ReceiveDatagram receives HTTP Datagrams (RFC 9297).

@@ -6,6 +6,8 @@
 
 ## Что изменено
 
+- HTTP/3 streams expose `SendDatagramWithDeadline` with the existing QUIC queue expiration semantics and standard RFC 9297 framing.
+
 - Default NewReno reduces the congestion window by 50% on a new loss event (RFC 9002 section 7.3.2); CUBIC is unchanged. Technical patch notes: [FORK.md](FORK.md).
 
 - `Conn.SendDatagramWithDeadline(ctx, payload, deadline)` ограничивает ожидание места в очереди и отбрасывает просроченные датаграммы перед упаковкой пакета. Обычный `SendDatagram` сохраняет прежнее поведение; уже переданные в упаковщик/сокет пакеты не отзываются.

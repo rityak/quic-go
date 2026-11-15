@@ -10,6 +10,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/metacubex/quic-go"
 	"github.com/metacubex/quic-go/http3/qlog"
@@ -251,6 +252,10 @@ func (c *rawConn) handleControlStream(str *quic.ReceiveStream) {
 }
 
 func (c *rawConn) sendDatagram(streamID quic.StreamID, b []byte) error {
+	return c.sendDatagramWithDeadline(context.Background(), streamID, b, time.Time{})
+}
+
+func (c *rawConn) sendDatagramWithDeadline(ctx context.Context, streamID quic.StreamID, b []byte, deadline time.Time) error {
 	// TODO: this creates a lot of garbage and an additional copy
 	data := make([]byte, 0, len(b)+8)
 	quarterStreamID := uint64(streamID / 4)
@@ -265,7 +270,7 @@ func (c *rawConn) sendDatagram(streamID quic.StreamID, b []byte) error {
 			},
 		})
 	}
-	return c.conn.SendDatagram(data)
+	return c.conn.SendDatagramWithDeadline(ctx, data, deadline)
 }
 
 func (c *rawConn) receiveDatagrams() error {
