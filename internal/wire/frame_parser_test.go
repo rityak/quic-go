@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/metacubex/quic-go/integrationtests/tools/israce"
 	"github.com/metacubex/quic-go/internal/protocol"
 	"github.com/metacubex/quic-go/internal/qerr"
 	"github.com/metacubex/quic-go/quicvarint"
@@ -731,6 +732,9 @@ func parseFrames(tb testing.TB, parser *FrameParser, data []byte, frames ...Fram
 }
 
 func TestFrameParserAllocs(t *testing.T) {
+	if israce.Enabled {
+		t.Skip("race instrumentation randomly drops sync.Pool entries; allocation counts require a normal build")
+	}
 	t.Run("STREAM", func(t *testing.T) {
 		var frames []Frame
 		for i := 0; i < 10; i++ {

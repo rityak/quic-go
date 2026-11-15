@@ -495,7 +495,7 @@ func TestConnectionServerInvalidPackets(t *testing.T) {
 			},
 			nil,
 		)
-		p.data[0] ^= 0x40 // unset the QUIC bit
+		p.data[5] = 21 // destination connection ID exceeds the QUIC limit
 		wasProcessed, err := tc.conn.handleOnePacket(p, 42)
 		require.NoError(t, err)
 		require.False(t, wasProcessed)

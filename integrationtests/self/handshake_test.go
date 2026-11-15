@@ -409,9 +409,8 @@ func testHandshakeCloseListener(t *testing.T, createListener func(*tls.Config) *
 			isFirst := sawFirst.CompareAndSwap(false, true)
 			if isFirst {
 			} else {
-				// Sleep for a bit.
-				// This allows the server to close the connection before the handshake completes.
 				close(connQueued)
+				// Leave time for the listener to reject this pending handshake.
 				time.Sleep(scaleDuration(10 * time.Millisecond))
 			}
 			return getTLSConfig(), nil
@@ -439,7 +438,7 @@ func testHandshakeCloseListener(t *testing.T, createListener func(*tls.Config) *
 
 	select {
 	case <-connQueued:
-	case <-time.After(scaleDuration(10 * time.Millisecond)):
+	case <-ctx.Done():
 		t.Fatal("timeout waiting for connection queued")
 	}
 

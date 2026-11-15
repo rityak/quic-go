@@ -1156,7 +1156,7 @@ func TestHTTPStreamer(t *testing.T) {
 
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://localhost:%d/httpstreamer", port), nil)
 	require.NoError(t, err)
-	tlsConf := getTLSClientConfigWithoutServerName()
+	tlsConf := getTLSClientConfig()
 	tlsConf.NextProtos = []string{http3.NextProtoH3}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

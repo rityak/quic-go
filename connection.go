@@ -1102,7 +1102,7 @@ func (c *Conn) handleOnePacket(rp receivedPacket, datagramPayloadChecksum qlog.D
 		}
 
 		if wire.IsLongHeaderPacket(p.data[0]) {
-			hdr, packetData, rest, err := wire.ParsePacket(p.data)
+			hdr, packetData, rest, err := wire.ParsePacketWithGrease(p.data, greaseQUICBit)
 			if err != nil {
 				if c.qlogger != nil {
 					if err == wire.ErrUnsupportedVersion {

@@ -143,7 +143,7 @@ func TestTransportAndDialConcurrentClose(t *testing.T) {
 	go func() { errChan <- tr.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	_, err := tr.Dial(ctx, server.LocalAddr(), &tls.Config{}, nil)
+	_, err := tr.Dial(ctx, server.LocalAddr(), &tls.Config{ServerName: "localhost"}, nil)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrTransportClosed)
 	require.NotErrorIs(t, err, context.DeadlineExceeded)

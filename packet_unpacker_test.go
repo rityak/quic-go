@@ -90,6 +90,7 @@ func testUnpackLongHeaderPacket(t *testing.T,
 	incorrectReservedBits bool,
 	decryptResult decryptResult,
 	expectedErr error,
+	grease ...bool,
 ) {
 	mockCtrl := gomock.NewController(t)
 	cs := mocks.NewMockCryptoSetup(mockCtrl)
@@ -121,8 +122,12 @@ func testUnpackLongHeaderPacket(t *testing.T,
 	if incorrectReservedBits {
 		hdrRaw[0] |= 0xc
 	}
+	greased := len(grease) > 0 && grease[0]
+	if greased {
+		hdrRaw[0] &^= 0x40
+	}
 	data := append(hdrRaw, payload...)
-	hdr, _, _, err := wire.ParsePacket(data)
+	hdr, _, _, err := wire.ParsePacketWithGrease(data, greased)
 	require.NoError(t, err)
 
 	opener := mocks.NewMockLongHeaderOpener(mockCtrl)
@@ -370,4 +375,12 @@ func TestUnpackHeaderDecryption(t *testing.T) {
 	packet, err := unpacker.UnpackLongHeader(hdr, data)
 	require.NoError(t, err)
 	require.Equal(t, protocol.PacketNumber(0x7331), packet.hdr.PacketNumber)
+}
+
+func TestUnpackGreasedLongHeaderPacket(t *testing.T) {
+	for _, level := range []protocol.EncryptionLevel{protocol.EncryptionInitial, protocol.EncryptionHandshake, protocol.Encryption0RTT} {
+		t.Run(level.String(), func(t *testing.T) {
+			testUnpackLongHeaderPacket(t, level, false, decryptResult{decrypted: []byte("authenticated")}, nil, true)
+		})
+	}
 }

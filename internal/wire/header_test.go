@@ -774,7 +774,7 @@ func FuzzHeaderParser(f *testing.F) {
 			if expLen := extHdr.GetLength(hdr.Version); expLen != protocol.ByteCount(len(b)) {
 				t.Fatalf("inconsistent header length: %#v. Expected %d, got %d", extHdr, expLen, len(b))
 			}
-			roundtripHdr, err := parseHeader(b)
+			roundtripHdr, err := parseHeader(b, false)
 			require.NoError(t, err)
 			roundtripExtHdr, err := roundtripHdr.ParseExtended(b)
 			require.NoError(t, err)

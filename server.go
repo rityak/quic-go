@@ -485,7 +485,7 @@ func (s *baseServer) handlePacketImpl(p receivedPacket) bool /* is the buffer st
 
 	// If we're creating a new connection, the packet will be passed to the connection.
 	// The header will then be parsed again.
-	hdr, _, _, err := wire.ParsePacket(p.data)
+	hdr, _, _, err := wire.ParsePacketWithGrease(p.data, greaseQUICBit)
 	if err != nil {
 		if s.qlogger != nil {
 			s.qlogger.RecordEvent(qlog.PacketDropped{

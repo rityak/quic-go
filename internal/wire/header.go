@@ -132,10 +132,16 @@ type Header struct {
 // If we understand the version, the packet is parsed up unto the packet number.
 // Otherwise, only the invariant part of the header is parsed.
 func ParsePacket(data []byte) (*Header, []byte, []byte, error) {
+	return ParsePacketWithGrease(data, false)
+}
+
+// ParsePacketWithGrease accepts a cleared QUIC bit when the local endpoint
+// advertises grease_quic_bit. The original header bytes remain authenticated.
+func ParsePacketWithGrease(data []byte, acceptGrease bool) (*Header, []byte, []byte, error) {
 	if len(data) == 0 || !IsLongHeaderPacket(data[0]) {
 		return nil, nil, nil, errors.New("not a long header packet")
 	}
-	hdr, err := parseHeader(data)
+	hdr, err := parseHeader(data, acceptGrease)
 	if err != nil {
 		if errors.Is(err, ErrUnsupportedVersion) {
 			return hdr, nil, nil, err
@@ -152,25 +158,25 @@ func ParsePacket(data []byte) (*Header, []byte, []byte, error) {
 // ParseHeader parses the header:
 // * if we understand the version: up to the packet number
 // * if not, only the invariant part of the header
-func parseHeader(b []byte) (*Header, error) {
+func parseHeader(b []byte, acceptGrease bool) (*Header, error) {
 	if len(b) == 0 {
 		return nil, io.EOF
 	}
 	typeByte := b[0]
 
 	h := &Header{typeByte: typeByte}
-	l, err := h.parseLongHeader(b[1:])
+	l, err := h.parseLongHeader(b[1:], acceptGrease)
 	h.parsedLen = protocol.ByteCount(l) + 1
 	return h, err
 }
 
-func (h *Header) parseLongHeader(b []byte) (int, error) {
+func (h *Header) parseLongHeader(b []byte, acceptGrease bool) (int, error) {
 	startLen := len(b)
 	if len(b) < 5 {
 		return 0, io.EOF
 	}
 	h.Version = protocol.Version(binary.BigEndian.Uint32(b[:4]))
-	if h.Version != 0 && h.typeByte&0x40 == 0 {
+	if h.Version != 0 && h.typeByte&0x40 == 0 && !acceptGrease {
 		return startLen - len(b), errors.New("not a QUIC packet")
 	}
 	destConnIDLen := int(b[4])

@@ -187,7 +187,7 @@ func testTransportClose(t *testing.T, conn net.PacketConn, closeFn func(), expec
 
 	errChan := make(chan error, 1)
 	go func() {
-		_, err := tr.Dial(context.Background(), server.LocalAddr(), &tls.Config{}, getQuicConfig(nil))
+		_, err := tr.Dial(context.Background(), server.LocalAddr(), &tls.Config{ServerName: "localhost"}, getQuicConfig(nil))
 		errChan <- err
 	}()
 

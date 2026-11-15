@@ -8,8 +8,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"math/big"
 	"io"
+	"math/big"
 	"net"
 	"os"
 	"sync/atomic"
@@ -23,7 +23,9 @@ import (
 // What ReadMsgUDP returns for an ICMP error left on the socket (IP_RECVERR): a packet too big or a
 // transient unreachable must not close the transport, a refused port must (T-116).
 func TestRecvICMPSoftErr(t *testing.T) {
-	wrap := func(e error) error { return &net.OpError{Op: "read", Net: "udp", Err: os.NewSyscallError("recvmsg", e)} }
+	wrap := func(e error) error {
+		return &net.OpError{Op: "read", Net: "udp", Err: os.NewSyscallError("recvmsg", e)}
+	}
 	for _, e := range []error{unix.EMSGSIZE, unix.EHOSTUNREACH, unix.ENETUNREACH, unix.EHOSTDOWN} {
 		if !isRecvICMPSoftErr(wrap(e)) {
 			t.Errorf("%v must be soft", e)
@@ -41,7 +43,9 @@ func TestRecvICMPSoftErr(t *testing.T) {
 func TestConnectionRefusedHook(t *testing.T) {
 	for _, keep := range []bool{true, false} {
 		t.Run(map[bool]string{true: "kept", false: "closed"}[keep], func(t *testing.T) {
-			ln, err := ListenAddr("127.0.0.1:0", selfSignedTLS(t), &Config{})
+			serverTransport := &Transport{Conn: newUDPConnLocalhost(t)}
+			defer serverTransport.Close()
+			ln, err := serverTransport.Listen(selfSignedTLS(t), &Config{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -77,6 +81,7 @@ func TestConnectionRefusedHook(t *testing.T) {
 			rc, _ := udp.SyscallConn()
 			_ = rc.Control(func(fd uintptr) { _ = unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_RECVERR, 1) })
 			tr := &Transport{Conn: udp}
+			defer tr.Close()
 			tr.SetCreatedConn(true)
 			tr.SetSingleUse(true)
 			var refused atomic.Int32

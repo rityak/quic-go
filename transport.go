@@ -578,13 +578,19 @@ func (t *Transport) handlePacket(p receivedPacket) {
 	if len(p.data) == 0 {
 		return
 	}
-	// A short header with the fixed bit cleared is a greased QUIC packet (RFC 9287,
-	// miray T-038) unless the application multiplexes non-QUIC traffic here.
-	if !wire.IsPotentialQUICPacket(p.data[0]) && !wire.IsLongHeaderPacket(p.data[0]) && t.readingNonQUICPackets.Load() {
+	nonQUIC := !wire.IsPotentialQUICPacket(p.data[0]) && !wire.IsLongHeaderPacket(p.data[0]) && t.readingNonQUICPackets.Load()
+	connID, err := wire.ParseConnectionID(p.data, t.connIDLen)
+	// Match known connection IDs before demultiplexing cleared-bit short headers.
+	if err == nil {
+		if handler, ok := (*packetHandlerMap)(t).Get(connID); ok {
+			handler.handlePacket(p)
+			return
+		}
+	}
+	if nonQUIC {
 		t.handleNonQUICPacket(p)
 		return
 	}
-	connID, err := wire.ParseConnectionID(p.data, t.connIDLen)
 	if err != nil {
 		t.logger.Debugf("error parsing connection ID on packet from %s: %s", p.remoteAddr, err)
 		if t.Tracer != nil {
@@ -597,11 +603,6 @@ func (t *Transport) handlePacket(p receivedPacket) {
 		return
 	}
 
-	// If there's a connection associated with the connection ID, pass the packet there.
-	if handler, ok := (*packetHandlerMap)(t).Get(connID); ok {
-		handler.handlePacket(p)
-		return
-	}
 	// RFC 9000 section 10.3.1 requires that the stateless reset detection logic is run for both
 	// packets that cannot be associated with any connections, and for packets that can't be decrypted.
 	// We deviate from the RFC and ignore the latter: If a packet's connection ID is associated with an

@@ -81,6 +81,7 @@ func TestMain(m *testing.M) {
 	}
 	if areTransportsRunning() {
 		fmt.Println("stray transport goroutines found")
+		pprof.Lookup("goroutine").WriteTo(os.Stdout, 2)
 		os.Exit(1)
 	}
 	os.Exit(status)
