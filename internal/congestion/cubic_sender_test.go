@@ -119,6 +119,17 @@ func TestCubicSenderStartup(t *testing.T) {
 	require.False(t, sender.sender.CanSend(sender.bytesInFlight))
 }
 
+func TestRenoLossHalvesWindow(t *testing.T) {
+	sender := newTestCubicSender(false)
+	sender.SendAvailableSendWindow()
+	before := sender.sender.GetCongestionWindow()
+	sender.LoseNPackets(1)
+	require.Equal(t, before/2, sender.sender.GetCongestionWindow())
+	require.Equal(t, before/2, sender.sender.slowStartThreshold)
+	sender.LoseNPackets(1)
+	require.Equal(t, before/2, sender.sender.GetCongestionWindow(), "one reduction per recovery period")
+}
+
 func TestCubicSenderPacing(t *testing.T) {
 	sender := newTestCubicSender(false)
 

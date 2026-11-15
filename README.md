@@ -6,6 +6,8 @@
 
 ## Что изменено
 
+- Default NewReno reduces the congestion window by 50% on a new loss event (RFC 9002 section 7.3.2); CUBIC is unchanged. Technical patch notes: [FORK.md](FORK.md).
+
 - `Conn.SendDatagramWithDeadline(ctx, payload, deadline)` ограничивает ожидание места в очереди и отбрасывает просроченные датаграммы перед упаковкой пакета. Обычный `SendDatagram` сохраняет прежнее поведение; уже переданные в упаковщик/сокет пакеты не отзываются.
 
 - Переполненный буфер сокета (ENOBUFS, EAGAIN) — отправка повторяется. Пропавший маршрут (ENETUNREACH и похожие) — пакет считается потерянным. Раньше любая такая ошибка закрывала соединение.
