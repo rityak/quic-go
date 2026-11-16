@@ -1,0 +1,17 @@
+name: Migration race checks
+on:
+  push:
+    branches: [codex/connection-migration]
+  pull_request:
+    paths: [connection.go, transport.go, 'path_*', 'integrationtests/self/*migration*', 'integrationtests/self/path_retirement_test.go']
+permissions:
+  contents: read
+jobs:
+  migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - run: go test -race . ./integrationtests/self -run 'Test(Migration|ConnectionMigration|PathManager|ConnID)' -count=1 -timeout=3m

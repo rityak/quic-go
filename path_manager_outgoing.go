@@ -41,6 +41,11 @@ func (p *Path) Probe(ctx context.Context) error {
 	p.pathManager.enqueueProbe(p)
 	nextProbeDur := p.initialRTT
 	var timer *time.Timer
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 	var timerChan <-chan time.Time
 	for {
 		select {
@@ -212,6 +217,7 @@ func (pm *pathManagerOutgoing) switchToPath(id pathID) error {
 	}
 	pm.pathToSwitchTo = p
 	pm.activePath = id
+	pm.scheduleSending()
 	return nil
 }
 
@@ -292,15 +298,20 @@ func (pm *pathManagerOutgoing) HandlePathResponseFrame(f *wire.PathResponseFrame
 }
 
 func (pm *pathManagerOutgoing) ShouldSwitchPath() (*Transport, bool) {
+	tr, _, ok := pm.takePathSwitch()
+	return tr, ok
+}
+
+func (pm *pathManagerOutgoing) takePathSwitch() (*Transport, pathID, bool) {
 	pm.mx.Lock()
 	defer pm.mx.Unlock()
 
 	if pm.pathToSwitchTo == nil {
-		return nil, false
+		return nil, 0, false
 	}
 	p := pm.pathToSwitchTo
 	pm.pathToSwitchTo = nil
-	return p.tr, true
+	return p.tr, pm.activePath, true
 }
 
 type pathManagerOutgoingAckHandler pathManagerOutgoing

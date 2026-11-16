@@ -575,6 +575,7 @@ func (t *Transport) maybeStopListening() {
 }
 
 func (t *Transport) handlePacket(p receivedPacket) {
+	p.transport = t
 	if len(p.data) == 0 {
 		return
 	}

@@ -46,7 +46,8 @@ type cryptoStreamHandler interface {
 }
 
 type receivedPacket struct {
-	buffer *packetBuffer
+	buffer    *packetBuffer
+	transport *Transport
 
 	remoteAddr net.Addr
 	rcvTime    monotime.Time
@@ -70,6 +71,7 @@ func (p *receivedPacket) Clone() *receivedPacket {
 		rcvTime:    p.rcvTime,
 		data:       p.data,
 		buffer:     p.buffer,
+		transport:  p.transport,
 		ecn:        p.ecn,
 		info:       p.info,
 	}
@@ -143,6 +145,8 @@ type Conn struct {
 	pathManager         *pathManager
 	largestRcvdAppData  protocol.PacketNumber
 	pathManagerOutgoing atomic.Pointer[pathManagerOutgoing]
+	pathOperations      chan pathOperation
+	activeOutgoingPath  pathID
 
 	streamsMap      *streamsMap
 	connIDManager   *connIDManager
@@ -518,6 +522,7 @@ var newClientConnection = func(
 }
 
 func (c *Conn) preSetup() {
+	c.pathOperations = make(chan pathOperation)
 	c.largestRcvdAppData = protocol.InvalidPacketNumber
 	c.initialStream = newInitialCryptoStream(c.perspective == protocol.PerspectiveClient)
 	c.handshakeStream = newCryptoStream()
@@ -615,6 +620,8 @@ runLoop:
 		select {
 		case <-c.closeChan:
 			break runLoop
+		case operation := <-c.pathOperations:
+			operation.run()
 		default:
 		}
 
@@ -668,6 +675,8 @@ runLoop:
 				break runLoop
 			case <-c.timer.C:
 			case <-c.sendingScheduled:
+			case operation := <-c.pathOperations:
+				operation.run()
 			case <-sendQueueAvailable:
 			case <-c.notifyReceivedPacket:
 				wasProcessed, err := c.handlePackets()
@@ -714,9 +723,14 @@ runLoop:
 		if c.perspective == protocol.PerspectiveClient {
 			pm := c.pathManagerOutgoing.Load()
 			if pm != nil {
-				tr, ok := pm.ShouldSwitchPath()
-				if ok {
-					c.switchToNewPath(tr, now)
+				tr, id, ok := pm.takePathSwitch()
+				if ok && id != c.activeOutgoingPath {
+					if !c.connIDManager.UseConnIDForPath(id) {
+						pm.deferPathSwitch(id)
+					} else {
+						c.switchToNewPath(tr, now)
+						c.activeOutgoingPath = id
+					}
 				}
 			}
 		}
@@ -1272,6 +1286,13 @@ func (c *Conn) handleShortHeaderPacket(
 
 	// In RFC 9000, only the client can migrate between paths.
 	if c.perspective == protocol.PerspectiveClient {
+		if pathChallenge != nil {
+			if p.transport == nil {
+				c.handlePathChallengeFrame(pathChallenge)
+			} else if err := c.respondOnPath(p, pathChallenge); err != nil {
+				return false, err
+			}
+		}
 		return true, nil
 	}
 	if addrsEqual(p.remoteAddr, c.RemoteAddr()) {
@@ -1307,7 +1328,10 @@ func (c *Conn) handleShortHeaderPacket(
 	if !shouldSwitchPath || pn != c.largestRcvdAppData {
 		return true, nil
 	}
-	c.pathManager.SwitchToPath(p.remoteAddr)
+	id := c.pathManager.SwitchToPath(p.remoteAddr)
+	if id == invalidPathID || !c.connIDManager.UseConnIDForPath(id) {
+		return true, nil
+	}
 	c.sentPacketHandler.MigratedPath(p.rcvTime, protocol.ByteCount(c.config.InitialPacketSize))
 	maxPacketSize := protocol.ByteCount(protocol.MaxPacketBufferSize)
 	if c.peerParams.MaxUDPPayloadSize > 0 && c.peerParams.MaxUDPPayloadSize < maxPacketSize {
@@ -1948,7 +1972,6 @@ func (c *Conn) handleFrame(
 		err = c.streamsMap.HandleStopSendingFrame(frame)
 	case *wire.PingFrame:
 	case *wire.PathChallengeFrame:
-		c.handlePathChallengeFrame(frame)
 		pathChallenge = frame
 	case *wire.PathResponseFrame:
 		err = c.handlePathResponseFrame(frame)
@@ -2518,7 +2541,11 @@ func (c *Conn) sendPackets(now monotime.Time) error {
 				c.logger.Debugf("sending path probe packet from %s", c.LocalAddr())
 				c.logShortHeaderPacket(probe, protocol.ECNNon, buf.Len())
 				c.registerPackedShortHeaderPacket(probe, protocol.ECNNon, now)
-				tr.WriteTo(buf.Data, c.conn.RemoteAddr())
+				_, sendErr := tr.WriteTo(buf.Data, c.conn.RemoteAddr())
+				buf.Release()
+				if sendErr != nil {
+					c.logger.Debugf("path probe send failed: %s", sendErr)
+				}
 				// There's (likely) more data to send. Loop around again.
 				c.scheduleSending()
 				return nil
@@ -3139,6 +3166,9 @@ func (c *Conn) AddPath(t *Transport) (*Path, error) {
 	}
 	if err := t.init(false); err != nil {
 		return nil, err
+	}
+	if t.isSingleUse && c.config.ConnectionRefused != nil {
+		t.connRefused.Store(&c.config.ConnectionRefused)
 	}
 	return c.getPathManager().NewPath(
 		t,

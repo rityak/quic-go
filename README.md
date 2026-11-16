@@ -6,6 +6,8 @@
 
 ## Что изменено
 
+- Connection migration preserves the reserved destination connection ID and returns PATH_RESPONSE on the receiving socket. `Conn.RetirePathTransport` releases inactive transport registrations before the caller closes an old socket.
+
 - HTTP/3 streams expose `SendDatagramWithDeadline` with the existing QUIC queue expiration semantics and standard RFC 9297 framing.
 
 - Default NewReno reduces the congestion window by 50% on a new loss event (RFC 9002 section 7.3.2); CUBIC is unchanged. Technical patch notes: [FORK.md](FORK.md).
