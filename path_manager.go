@@ -159,10 +159,12 @@ func (pm *pathManager) HandlePathResponseFrame(f *wire.PathResponseFrame) {
 }
 
 // SwitchToPath is called when the connection switches to a new path
-func (pm *pathManager) SwitchToPath(addr net.Addr) {
+func (pm *pathManager) SwitchToPath(addr net.Addr) pathID {
+	id := invalidPathID
 	// retire all other paths
 	for _, path := range pm.paths {
 		if addrsEqual(path.addr, addr) {
+			id = path.id
 			pm.logger.Debugf("switching to path %d (%s)", path.id, addr)
 			continue
 		}
@@ -172,6 +174,7 @@ func (pm *pathManager) SwitchToPath(addr net.Addr) {
 		pm.paths[i] = nil
 	}
 	pm.paths = pm.paths[:0]
+	return id
 }
 
 type pathManagerAckHandler pathManager
