@@ -15,6 +15,7 @@ type mtuDiscoverer interface {
 	// It's unnecessary to call ShouldSendProbe before that.
 	Start(now monotime.Time)
 	ShouldSendProbe(now monotime.Time) bool
+	NextProbeTime() monotime.Time
 	CurrentSize() protocol.ByteCount
 	GetPing(now monotime.Time) (ping ackhandler.Frame, datagramSize protocol.ByteCount)
 	Reset(now monotime.Time, start, max protocol.ByteCount)
@@ -152,13 +153,18 @@ func (f *mtuFinder) Start(now monotime.Time) {
 }
 
 func (f *mtuFinder) ShouldSendProbe(now monotime.Time) bool {
+	deadline := f.NextProbeTime()
+	return !deadline.IsZero() && !now.Before(deadline)
+}
+
+func (f *mtuFinder) NextProbeTime() monotime.Time {
 	if f.lastProbeTime.IsZero() {
-		return false
+		return 0
 	}
 	if f.inFlight != protocol.InvalidByteCount || f.done() {
-		return false
+		return 0
 	}
-	return !now.Before(f.lastProbeTime.Add(mtuProbeDelay * f.rttStats.SmoothedRTT()))
+	return f.lastProbeTime.Add(mtuProbeDelay * f.rttStats.SmoothedRTT())
 }
 
 func (f *mtuFinder) GetPing(now monotime.Time) (ackhandler.Frame, protocol.ByteCount) {

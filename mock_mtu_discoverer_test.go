@@ -119,6 +119,44 @@ func (c *MockMTUDiscovererGetPingCall) DoAndReturn(f func(monotime.Time) (ackhan
 	return c
 }
 
+// NextProbeTime mocks base method.
+func (m *MockMTUDiscoverer) NextProbeTime() monotime.Time {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NextProbeTime")
+	ret0, _ := ret[0].(monotime.Time)
+	return ret0
+}
+
+// NextProbeTime indicates an expected call of NextProbeTime.
+func (mr *MockMTUDiscovererMockRecorder) NextProbeTime() *MockMTUDiscovererNextProbeTimeCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NextProbeTime", reflect.TypeOf((*MockMTUDiscoverer)(nil).NextProbeTime))
+	return &MockMTUDiscovererNextProbeTimeCall{Call: call}
+}
+
+// MockMTUDiscovererNextProbeTimeCall wrap *gomock.Call
+type MockMTUDiscovererNextProbeTimeCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockMTUDiscovererNextProbeTimeCall) Return(arg0 monotime.Time) *MockMTUDiscovererNextProbeTimeCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockMTUDiscovererNextProbeTimeCall) Do(f func() monotime.Time) *MockMTUDiscovererNextProbeTimeCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockMTUDiscovererNextProbeTimeCall) DoAndReturn(f func() monotime.Time) *MockMTUDiscovererNextProbeTimeCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // Reset mocks base method.
 func (m *MockMTUDiscoverer) Reset(now monotime.Time, start, max protocol.ByteCount) {
 	m.ctrl.T.Helper()

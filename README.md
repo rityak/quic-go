@@ -6,6 +6,8 @@
 
 ## Что изменено
 
+- PMTU discovery schedules its next probe even without application traffic. A newly established DATAGRAM tunnel can discover enough capacity for an inner QUIC Initial; congestion limits and pacing still apply.
+
 - Connection migration preserves the reserved destination connection ID and returns PATH_RESPONSE on the receiving socket. `Conn.RetirePathTransport` releases inactive transport registrations before the caller closes an old socket.
 
 - HTTP/3 streams expose `SendDatagramWithDeadline` with the existing QUIC queue expiration semantics and standard RFC 9297 framing.

@@ -4,6 +4,14 @@ Module path remains `github.com/metacubex/quic-go`. The fork keeps the upstream
 license and follows the `miray` branch. Existing socket, DATAGRAM, GREASE and
 recovery changes are listed in README.md.
 
+## Idle path MTU discovery
+
+The connection timer includes the next PMTU probe deadline. Previously discovery
+could stall after the handshake when application datagrams exceeded the initial
+packet capacity and therefore never entered the send queue. Probe timing still
+respects congestion blocking and pacing; completed or outstanding probes do not
+arm another timer. Tests cover an idle path with 40 ms RTT and timer pacing.
+
 ## NewReno loss reduction
 
 The default sender uses NewReno (`reno=true`). On a new congestion event,

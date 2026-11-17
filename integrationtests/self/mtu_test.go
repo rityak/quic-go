@@ -42,6 +42,42 @@ func TestInitialPacketSize(t *testing.T) {
 	<-done
 }
 
+func TestPathMTUDiscoveryWithoutApplicationTraffic(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ln, err := quic.Listen(newUDPConnLocalhost(t), getTLSConfig(), getQuicConfig(&quic.Config{
+		InitialPacketSize: 1200,
+		EnableDatagrams:   true,
+	}))
+	require.NoError(t, err)
+	defer ln.Close()
+	proxy := &quicproxy.Proxy{
+		Conn:        newUDPConnLocalhost(t),
+		ServerAddr:  ln.Addr().(*net.UDPAddr),
+		DelayPacket: func(quicproxy.Direction, net.Addr, net.Addr, []byte) time.Duration { return 20 * time.Millisecond },
+	}
+	require.NoError(t, proxy.Start())
+	defer proxy.Close()
+	client, err := quic.Dial(ctx, newUDPConnLocalhost(t), proxy.LocalAddr(), getTLSClientConfig(), getQuicConfig(&quic.Config{
+		InitialPacketSize: 1200,
+		EnableDatagrams:   true,
+	}))
+	require.NoError(t, err)
+	defer client.CloseWithError(0, "")
+	server, err := ln.Accept(ctx)
+	require.NoError(t, err)
+	defer server.CloseWithError(0, "")
+	payload := bytes.Repeat([]byte("d"), 1200)
+	for _, peer := range []*quic.Conn{client, server} {
+		require.Eventually(t, func() bool { return peer.SendDatagram(payload) == nil }, 2*time.Second, 10*time.Millisecond)
+	}
+	for _, peer := range []*quic.Conn{client, server} {
+		got, err := peer.ReceiveDatagram(ctx)
+		require.NoError(t, err)
+		require.Equal(t, payload, got)
+	}
+}
+
 func TestPathMTUDiscovery(t *testing.T) {
 	rtt := scaleDuration(5 * time.Millisecond)
 	const mtu = 1400

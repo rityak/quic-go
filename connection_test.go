@@ -2190,6 +2190,45 @@ func TestConnectionACKTimer(t *testing.T) {
 	})
 }
 
+func TestConnectionMTUProbeTimer(t *testing.T) {
+	for _, pacing := range []time.Duration{0, 500 * time.Millisecond} {
+		t.Run(pacing.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				sph := mockackhandler.NewMockSentPacketHandler(ctrl)
+				sph.EXPECT().GetLossDetectionTimeout().AnyTimes()
+				tc := newServerTestConnection(t, ctrl, &Config{MaxIdleTimeout: time.Second}, false,
+					connectionOptHandshakeConfirmed(), connectionOptSentPacketHandler(sph), connectionOptRTT(20*time.Millisecond))
+				conn := tc.conn
+				conn.idleTimeout = time.Hour
+				conn.pacingDeadline = 0
+				conn.timer = time.NewTimer(time.Hour)
+				defer conn.timer.Stop()
+				now := monotime.Now()
+				conn.mtuDiscoverer = newMTUDiscoverer(conn.rttStats, 1200, 1452, nil)
+				conn.mtuDiscoverer.Start(now)
+				if pacing != 0 {
+					conn.pacingDeadline = now.Add(pacing)
+				}
+				conn.maybeResetTimer()
+				want := utils.Max(100*time.Millisecond, pacing)
+				time.Sleep(want - time.Millisecond)
+				select {
+				case <-conn.timer.C:
+					t.Fatal("PMTU timer fired before probe or pacing deadline")
+				default:
+				}
+				time.Sleep(2 * time.Millisecond)
+				select {
+				case <-conn.timer.C:
+				default:
+					t.Fatal("PMTU timer did not wake an idle connection")
+				}
+			})
+		})
+	}
+}
+
 // Send a GSO batch, until we have no more data to send.
 func TestConnectionGSOBatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

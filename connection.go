@@ -923,6 +923,17 @@ func (c *Conn) maybeResetTimer() {
 	if !c.pacingDeadline.IsZero() && c.pacingDeadline.Before(deadline) {
 		deadline = c.pacingDeadline
 	}
+	// PMTU discovery must also progress when no application packet fits yet.
+	if c.handshakeConfirmed && c.mtuDiscoverer != nil {
+		if t := c.mtuDiscoverer.NextProbeTime(); !t.IsZero() {
+			if !c.pacingDeadline.IsZero() {
+				t = utils.Max(t, c.pacingDeadline)
+			}
+			if t.Before(deadline) {
+				deadline = t
+			}
+		}
+	}
 	c.timer.Reset(monotime.Until(deadline))
 }
 
